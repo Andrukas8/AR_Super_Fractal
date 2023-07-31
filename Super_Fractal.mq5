@@ -3,19 +3,11 @@
 //|                                                                  |
 //|                                                                  |
 //+------------------------------------------------------------------+
-#property copyright "Andrukas8"
-#property link      "https://github.com/Andrukas8/AR_Super_Fractal"
 #property version   "1.01"
-#property indicator_chart_window
-
+//---- indicator settings
 #property indicator_chart_window
 #property indicator_buffers 2
 #property indicator_plots   2
-
-// -- indicator inputs
-input int inp_fractalShoulder = 2; // Fractal Shoulder (candles on each side)
-input int fractal_offset = 10; // Fractal Offset (empty space)
-
 //--- Bearish Fractal
 #property indicator_label1  "Bearish Fractal"
 #property indicator_type1   DRAW_ARROW
@@ -30,134 +22,104 @@ input int fractal_offset = 10; // Fractal Offset (empty space)
 #property indicator_style2  STYLE_SOLID
 #property indicator_width2  1
 
-//--- indicator buffers
-double BufferUP[];
-double BufferDN[];
-int fractalShoulder;
+// -- indicator inputs
+input int inp_fractalShoulder = 2; // Fractal Shoulder (candles on each side)
+input int ExtArrowShift = 10; // Fractal Offset (empty space)
+
+//---- indicator buffers
+double ExtUpperBuffer[];
+double ExtLowerBuffer[];
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                         |
 //+------------------------------------------------------------------+
-int OnInit()
+void OnInit()
   {
-//--- indicator buffers mapping
-   SetIndexBuffer(0,BufferUP,INDICATOR_DATA);
-   SetIndexBuffer(1,BufferDN,INDICATOR_DATA);
-//--- setting a code from the Wingdings charset as the property of PLOT_ARROW
-   PlotIndexSetInteger(0,PLOT_ARROW,217); // Arrow up
-   PlotIndexSetInteger(1,PLOT_ARROW,218); // Arrow Down
-   PlotIndexSetInteger(0,PLOT_ARROW_SHIFT,-1*fractal_offset);
-   PlotIndexSetInteger(1,PLOT_ARROW_SHIFT,fractal_offset);
-//--- setting indicator parameters
-   IndicatorSetString(INDICATOR_SHORTNAME,"SuperFractal");
-   IndicatorSetInteger(INDICATOR_DIGITS,Digits());
-//--- setting buffer arrays as timeseries
-   ArraySetAsSeries(BufferUP,true);
-   ArraySetAsSeries(BufferDN,true);
-//---
-   return(INIT_SUCCEEDED);
+//---- indicator buffers mapping
+   SetIndexBuffer(0,ExtUpperBuffer,INDICATOR_DATA);
+   SetIndexBuffer(1,ExtLowerBuffer,INDICATOR_DATA);
+   IndicatorSetInteger(INDICATOR_DIGITS,_Digits);
+//---- sets first bar from what index will be drawn
+   PlotIndexSetInteger(0,PLOT_ARROW,217);
+   PlotIndexSetInteger(1,PLOT_ARROW,218);
+//---- arrow shifts when drawing
+
+   PlotIndexSetInteger(0,PLOT_ARROW_SHIFT,-1*ExtArrowShift);
+   PlotIndexSetInteger(1,PLOT_ARROW_SHIFT,ExtArrowShift);
+//---- sets drawing line empty value--
+   PlotIndexSetDouble(0,PLOT_EMPTY_VALUE,EMPTY_VALUE);
+   PlotIndexSetDouble(1,PLOT_EMPTY_VALUE,EMPTY_VALUE);
+//---- initialization done
   }
+
 //+------------------------------------------------------------------+
-//| Custom indicator iteration function                              |
+//|  Accelerator/Decelerator Oscillator                              |
 //+------------------------------------------------------------------+
-int OnCalculate(const int rates_total,
-                const int prev_calculated,
-                const datetime &time[],
-                const double &open[],
-                const double &high[],
-                const double &low[],
-                const double &close[],
-                const long &tick_volume[],
-                const long &volume[],
-                const int &spread[])
+int OnCalculate(const int rates_total,const int prev_calculated,
+                const datetime &Time[],
+                const double &Open[],
+                const double &High[],
+                const double &Low[],
+                const double &Close[],
+                const long &TickVolume[],
+                const long &Volume[],
+                const int &Spread[])
   {
-
-
-// --- Checking if Fractal Shoulder integer is valid
-   if(inp_fractalShoulder <= 0)
+   int i,limit;
+   int fractalShoulder = inp_fractalShoulder;
+//---
+   if(rates_total<fractalShoulder * 2 + 1)
+      return(0);
+//---
+   if(prev_calculated<fractalShoulder * 2 + 3)
      {
-      fractalShoulder = 1;
+      limit=fractalShoulder;
+      //--- clean up arrays
+      ArrayInitialize(ExtUpperBuffer,EMPTY_VALUE);
+      ArrayInitialize(ExtLowerBuffer,EMPTY_VALUE);
      }
    else
+      limit=rates_total-(fractalShoulder * 2 + 1);
+
+   for(i=limit; i<rates_total-(fractalShoulder+1) && !IsStopped(); i++)
      {
-      fractalShoulder = inp_fractalShoulder;
-     }
-
-
-//--- Checking the minimum number of bars for calculation
-
-   if(rates_total<fractalShoulder)
-      return 0;
-
-//--- Checking and calculating the number of bars
-   int limit=rates_total-prev_calculated;
-
-   if(limit>1)
-     {
-      limit=rates_total - fractalShoulder - 1;
-      ArrayInitialize(BufferUP,EMPTY_VALUE);
-      ArrayInitialize(BufferDN,EMPTY_VALUE);
-     }
-//--- Indexing arrays as timeseries
-   ArraySetAsSeries(high,true);
-   ArraySetAsSeries(low,true);
-
-//--- Calculating the indicator
-
-   for(int i=limit; i>=fractalShoulder && !IsStopped(); i--)
-     {
-      bool frac_bull=false;
-      bool frac_bear=false;
+      //---- Upper Fractal
 
       double highs[];
       double lows[];
 
-      double max_high;
-      double min_low;
+      bool upperFractal = false;
 
-      for(int j=1; j<=fractalShoulder; j++)
+      for(int j = 1; j<=fractalShoulder; j++)
         {
-         highs.Push(high[i+j]);
-         highs.Push(high[i-j]);
-         lows.Push(low[i+j]);
-         lows.Push(low[i-j]);
+         highs.Push(High[i+j]);
+         highs.Push(High[i-j]);
+         lows.Push(Low[i+j]);
+         lows.Push(Low[i-j]);
         }
 
-      max_high = highs[ArrayMaximum(highs)];
-      min_low = lows[ArrayMinimum(lows)];
+      double max_high = highs[ArrayMaximum(highs)];
+      double min_low = lows[ArrayMinimum(lows)];
 
-      if(high[i] > max_high)
+      if(High[i] > max_high)
         {
-         frac_bull = true;
+         ExtUpperBuffer[i]=High[i];
         }
-
-      if(low[i] < min_low)
-        {
-         frac_bear = true;
-        }
-
-      //--- Fractals
-
-      if(frac_bull)
-        {
-         BufferUP[i]=high[i];
-        }
-
       else
-         BufferUP[i]=EMPTY_VALUE;
+         ExtUpperBuffer[i]=EMPTY_VALUE;
 
-      if(frac_bear)
+
+      if(Low[i] < min_low)
         {
-         BufferDN[i]=low[i];
+         ExtLowerBuffer[i]=Low[i];
         }
-
       else
-         BufferDN[i]=EMPTY_VALUE;
+         ExtLowerBuffer[i]=EMPTY_VALUE;
+
      }
-
-//--- return value of prev_calculated for next call
+//--- OnCalculate done. Return new prev_calculated.
    return(rates_total);
-
   }
+
 //+------------------------------------------------------------------+
 //+------------------------------------------------------------------+
